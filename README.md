@@ -14,9 +14,11 @@ python3 -m venv .venv
 ## Usage
 
 ```bash
-anchor index                        # index everything in the watch folder
-anchor watch                        # keep indexing new ones (Ctrl-C to stop)
+anchor index                        # sync the watch folder (adds new, removes deleted)
+anchor watch                        # live: indexes new files, forgets deleted ones
 anchor ask "screenshot of the module object is not callable error"
+anchor find "dashboard"             # just list matching files (no LLM, offline)
+anchor prune                        # drop index entries for files deleted anywhere
 ```
 
 Config lives in `~/.anchor/config.json`:
