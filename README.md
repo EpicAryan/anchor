@@ -36,10 +36,11 @@ the raw matching snippets with their file paths (extractive mode).
 
 To use a free-tier cloud LLM for synthesized answers:
 
-1. Get a key: [Gemini](https://aistudio.google.com/apikey) or
-   [Groq](https://console.groq.com/keys).
-2. `install -m 600 /dev/null ~/.anchor/env` then add `GEMINI_API_KEY=...`
-   (or `GROQ_API_KEY=...`) to it.
+1. Get a key: [Gemini](https://aistudio.google.com/apikey),
+   [Groq](https://console.groq.com/keys), or
+   [OpenRouter](https://openrouter.ai/keys).
+2. `install -m 600 /dev/null ~/.anchor/env` then add `GEMINI_API_KEY=...`,
+   `GROQ_API_KEY=...`, or `OPENROUTER_API_KEY=...` to it.
 3. Per-question consent: `anchor ask "..." --cloud`
    Standing consent: set `"allow_cloud": true` in config. `--local` overrides.
 
@@ -65,5 +66,9 @@ To use a free-tier cloud LLM for synthesized answers:
 - Gemini free tier: per-minute and per-day request caps; 429s are retried
   twice with backoff, then anchor falls back to extractive results.
 - Groq free tier: token-per-minute caps; same fallback applies.
+- OpenRouter: defaults to a `:free` model
+  (`meta-llama/llama-3.3-70b-instruct:free`) so no credit is consumed;
+  free models have daily request caps. Override the model with
+  `ANCHOR_OPENROUTER_MODEL=<model-id>` in `~/.anchor/env`.
 - **Free tiers may use your inputs for training.** That's the price of free —
   redaction plus top-k-only egress limits the exposure; `--local` avoids it.

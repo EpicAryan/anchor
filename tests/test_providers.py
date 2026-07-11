@@ -81,6 +81,46 @@ def test_groq_generate_parses_response(monkeypatch):
     assert get_provider("groq").generate("q?") == "groq says"
 
 
+def test_openrouter_requires_key(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError, match="OPENROUTER_API_KEY"):
+        get_provider("openrouter")
+
+
+def test_openrouter_generate_parses_response(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.delenv("ANCHOR_OPENROUTER_MODEL", raising=False)
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"], captured["headers"] = url, headers
+        captured["payload"] = json
+        return FakeResponse(200, {"choices": [{"message": {"content": "routed"}}]})
+
+    monkeypatch.setattr(providers_mod.requests, "post", fake_post)
+    provider = get_provider("openrouter")
+    assert provider.is_cloud is True
+    assert provider.generate("q?") == "routed"
+    assert captured["headers"]["Authorization"] == "Bearer k"
+    assert "key=" not in captured["url"]
+    assert "openrouter.ai" in captured["url"]
+    assert captured["payload"]["model"].endswith(":free")  # free model by default
+
+
+def test_openrouter_model_env_override(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setenv("ANCHOR_OPENROUTER_MODEL", "custom/model")
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(200, {"choices": [{"message": {"content": "x"}}]})
+
+    monkeypatch.setattr(providers_mod.requests, "post", fake_post)
+    get_provider("openrouter").generate("q?")
+    assert captured["payload"]["model"] == "custom/model"
+
+
 def test_ollama_connection_refused_becomes_provider_error(monkeypatch):
     import requests as real_requests
 

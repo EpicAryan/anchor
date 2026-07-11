@@ -45,9 +45,10 @@ def get_provider(name: str) -> LLMProvider:
     from anchor.providers.gemini import GeminiProvider
     from anchor.providers.groq import GroqProvider
     from anchor.providers.ollama import OllamaProvider
+    from anchor.providers.openrouter import OpenRouterProvider
 
     registry = {"ollama": OllamaProvider, "gemini": GeminiProvider,
-                "groq": GroqProvider}
+                "groq": GroqProvider, "openrouter": OpenRouterProvider}
     if name not in registry:
         raise ProviderError(
             f"unknown provider {name!r}; expected one of {sorted(registry)}")
