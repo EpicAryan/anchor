@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS chunks (
 class MetadataDB:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(path)
+        # check_same_thread=False: the watcher indexes from watchdog's single
+        # dispatch thread while the connection is created on the main thread.
+        # Access stays serialized (one dispatch thread), so this is safe.
+        self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(_SCHEMA)
         self.conn.commit()

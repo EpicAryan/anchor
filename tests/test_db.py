@@ -1,4 +1,5 @@
 import stat
+import threading
 
 from anchor.db import MetadataDB
 
@@ -31,6 +32,25 @@ def test_db_file_mode_0600(tmp_path):
     path = tmp_path / "test.db"
     MetadataDB(path)
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_db_usable_from_worker_thread(tmp_path):
+    # watchdog delivers file events on a worker thread; the connection is
+    # created on the main thread. Must not raise sqlite3.ProgrammingError.
+    db = MetadataDB(tmp_path / "test.db")
+    errors = []
+
+    def work():
+        try:
+            doc_id = db.upsert_document("screenshot", "/pics/t.png", "h")
+            db.replace_chunks(doc_id, ["text"], ["v1"])
+        except Exception as exc:
+            errors.append(exc)
+
+    t = threading.Thread(target=work)
+    t.start()
+    t.join()
+    assert errors == []
 
 
 def test_sql_injection_in_path_is_inert(tmp_path):
