@@ -11,6 +11,12 @@ class Embedder:
 
     def _load(self):
         if self._model is None:
+            try:
+                from transformers.utils import logging as hf_logging
+                hf_logging.set_verbosity_error()
+                hf_logging.disable_progress_bar()
+            except ImportError:
+                pass
             from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer(self.model_name)
         return self._model

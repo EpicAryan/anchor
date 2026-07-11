@@ -2,7 +2,8 @@ import pytest
 
 from anchor.config import Config
 from anchor.providers import LLMProvider, ProviderError
-from anchor.query import Answer, answer_question, infer_source_type
+from anchor.query import (Answer, answer_question, find_matches,
+                          infer_source_type)
 
 
 class FakeEmbedder:
@@ -100,3 +101,23 @@ def test_no_hits():
     ans = run(CapturingProvider(is_cloud=False), hits=[])
     assert ans.sources == []
     assert "no indexed content" in ans.text.lower()
+
+
+def test_find_matches_returns_best_chunk_per_file():
+    # two chunks from the same file: only the closest one is kept
+    hits = HITS + [
+        {"vector_id": "v3", "text": "another chunk from the same screenshot",
+         "metadata": {"source_path": "/pics/a.png", "source_type": "screenshot"},
+         "distance": 0.9},
+    ]
+    matches = find_matches("django", config=Config(), embedder=FakeEmbedder(),
+                           store=FakeStore(hits))
+    assert [m["path"] for m in matches] == ["/pics/a.png", "/pics/b.png"]
+    assert "django migrate failed" in matches[0]["snippet"]
+    assert len(matches[0]["snippet"]) <= 150
+
+
+def test_find_matches_empty_store():
+    matches = find_matches("anything", config=Config(),
+                           embedder=FakeEmbedder(), store=FakeStore([]))
+    assert matches == []

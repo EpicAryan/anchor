@@ -14,7 +14,7 @@ python3 -m venv .venv
 ## Usage
 
 ```bash
-anchor index ~/Screenshots          # backfill existing screenshots
+anchor index                        # index everything in the watch folder
 anchor watch                        # keep indexing new ones (Ctrl-C to stop)
 anchor ask "screenshot of the module object is not callable error"
 ```

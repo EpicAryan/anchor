@@ -12,8 +12,15 @@ def test_parser_commands():
     args = parser.parse_args(["index", "/pics"])
     assert args.command == "index" and args.path == "/pics"
 
+    args = parser.parse_args(["index"])          # no path = configured folder
+    assert args.command == "index" and args.path is None
+
     args = parser.parse_args(["watch"])
     assert args.command == "watch"
+
+    args = parser.parse_args(["find", "dashboard"])
+    assert args.command == "find" and args.question == "dashboard"
+    assert args.k is None
 
 
 def test_provider_resolution_defaults_to_local():
