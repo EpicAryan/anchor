@@ -71,3 +71,44 @@ def test_empty_ocr_result(indexer, tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_mod, "extract_text_from_image", lambda path: "")
     p = make_png(tmp_path)
     assert indexer.index_file(p) == "empty"
+
+
+def test_remove_file_deletes_db_row_and_vectors(indexer, tmp_path):
+    p = make_png(tmp_path)
+    indexer.index_file(p)
+    assert indexer.remove_file(p) == "removed"
+    assert indexer.db.get_document(str(p.resolve())) is None
+    hits = indexer.store.query(indexer.embedder.embed_query("TypeError"), top_k=5)
+    assert hits == []
+
+
+def test_remove_file_unknown_path(indexer, tmp_path):
+    assert indexer.remove_file(tmp_path / "never-indexed.png") == "unknown"
+
+
+def test_prune_removes_only_missing_files(indexer, tmp_path):
+    p1 = make_png(tmp_path, name="gone.png")
+    p2 = make_png(tmp_path, name="kept.png")
+    indexer.index_file(p1)
+    indexer.index_file(p2)
+    p1.unlink()  # simulate the user deleting a screenshot
+    removed = indexer.prune()
+    assert removed == [str(p1.resolve())]
+    assert indexer.db.get_document(str(p2.resolve())) is not None
+    hits = indexer.store.query(indexer.embedder.embed_query("TypeError"), top_k=10)
+    assert {h["metadata"]["source_path"] for h in hits} == {str(p2.resolve())}
+
+
+def test_prune_scoped_to_directory(indexer, tmp_path):
+    inside = make_png(tmp_path, name="inside.png")
+    other_dir = tmp_path / "elsewhere"
+    other_dir.mkdir()
+    outside = other_dir / "outside.png"
+    outside.write_bytes(inside.read_bytes())
+    indexer.index_file(inside)
+    indexer.index_file(outside)
+    inside.unlink()
+    outside.unlink()
+    removed = indexer.prune(under=tmp_path / "elsewhere")
+    assert removed == [str(outside.resolve())]           # scoped: only elsewhere/
+    assert indexer.db.get_document(str(inside.resolve())) is not None

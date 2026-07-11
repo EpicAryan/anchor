@@ -49,3 +49,25 @@ class Indexer:
               "source_path": str(path)} for _ in chunks],
         )
         return "indexed"
+
+    def remove_file(self, path: Path) -> str:
+        """Forget a file: delete its document row, chunks, and vectors."""
+        path = path.resolve()
+        if self.db.get_document(str(path)) is None:
+            return "unknown"
+        self.store.delete(self.db.delete_document(str(path)))
+        return "removed"
+
+    def prune(self, under: Path | None = None) -> list[str]:
+        """Remove index entries whose files no longer exist on disk.
+        `under` limits the sweep to one directory."""
+        prefix = f"{under.resolve()}/" if under else None
+        removed = []
+        for source_path in self.db.all_documents():
+            if prefix and not source_path.startswith(prefix):
+                continue
+            if Path(source_path).exists():
+                continue
+            self.store.delete(self.db.delete_document(source_path))
+            removed.append(source_path)
+        return removed

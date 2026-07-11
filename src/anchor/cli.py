@@ -40,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_watch.add_argument("--dir", default=None,
                          help="override configured watch directory")
 
+    sub.add_parser("prune",
+                   help="remove index entries for files deleted from disk")
+
     p_find = sub.add_parser(
         "find", help="list screenshots matching a phrase (no LLM, fully local)")
     p_find.add_argument("question")
@@ -94,11 +97,22 @@ def main(argv: list[str] | None = None) -> int:
         files = ([target] if target.is_file() else
                  sorted(p for p in target.iterdir()
                         if p.suffix.lower() in IMAGE_EXTENSIONS))
-        if not files:
-            print("nothing to index", file=sys.stderr)
-            return 1
         for f in files:
             print(f"{indexer.index_file(f):>12}  {f}")
+        pruned = indexer.prune(under=target) if target.is_dir() else []
+        for p in pruned:
+            print(f"{'removed':>12}  {p}")
+        if not files and not pruned:
+            print("nothing to index", file=sys.stderr)
+            return 1
+        return 0
+
+    if args.command == "prune":
+        removed = _make_indexer(config).prune()
+        if not removed:
+            print("nothing to prune — index matches disk")
+        for p in removed:
+            print(f"{'removed':>12}  {p}")
         return 0
 
     if args.command == "watch":

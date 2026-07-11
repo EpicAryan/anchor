@@ -71,5 +71,21 @@ class MetadataDB:
         self.conn.commit()
         return old
 
+    def delete_document(self, source_path: str) -> list[str]:
+        """Delete a document and its chunks; returns the vector_ids that the
+        caller must also purge from the vector store."""
+        vids = [r[0] for r in self.conn.execute(
+            """SELECT c.vector_id FROM chunks c
+               JOIN documents d ON c.document_id = d.id
+               WHERE d.source_path = ?""", (source_path,)).fetchall()]
+        self.conn.execute(
+            "DELETE FROM documents WHERE source_path = ?", (source_path,))
+        self.conn.commit()
+        return vids
+
+    def all_documents(self) -> list[str]:
+        return [r[0] for r in self.conn.execute(
+            "SELECT source_path FROM documents").fetchall()]
+
     def close(self) -> None:
         self.conn.close()

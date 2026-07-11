@@ -22,6 +22,9 @@ def test_parser_commands():
     assert args.command == "find" and args.question == "dashboard"
     assert args.k is None
 
+    args = parser.parse_args(["prune"])
+    assert args.command == "prune"
+
 
 def test_provider_resolution_defaults_to_local():
     cfg = Config()  # allow_cloud False

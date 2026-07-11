@@ -7,10 +7,15 @@ from anchor.watcher import MAX_FILE_BYTES, ScreenshotHandler, _should_poll
 class RecordingIndexer:
     def __init__(self):
         self.calls = []
+        self.removed = []
 
     def index_file(self, path):
         self.calls.append(path)
         return "indexed"
+
+    def remove_file(self, path):
+        self.removed.append(path)
+        return "removed"
 
 
 def make_handler(tmp_path):
@@ -74,6 +79,25 @@ def test_should_poll_on_windows_mounts(monkeypatch):
 def test_should_poll_env_override(monkeypatch):
     monkeypatch.setenv("ANCHOR_FORCE_POLLING", "1")
     assert _should_poll(Path("/home/amour/shots")) is True
+
+
+def test_deleted_file_removed_from_index(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    # file is already gone when the event arrives — that's the normal case
+    assert handler._maybe_remove(watch_dir / "old.png") == "removed"
+    assert idx.removed == [(watch_dir / "old.png").resolve()]
+
+
+def test_deleted_non_image_ignored(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    assert handler._maybe_remove(watch_dir / "notes.txt") is None
+    assert idx.removed == []
+
+
+def test_deleted_path_outside_watch_dir_ignored(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    assert handler._maybe_remove(watch_dir / ".." / "other.png") is None
+    assert idx.removed == []
 
 
 def test_indexer_exception_does_not_propagate(tmp_path):

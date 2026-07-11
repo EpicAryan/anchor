@@ -36,6 +36,31 @@ class ScreenshotHandler(FileSystemEventHandler):
         if not event.is_directory:
             self._maybe_index(Path(event.src_path))
 
+    def on_deleted(self, event):
+        if not event.is_directory:
+            self._maybe_remove(Path(event.src_path))
+
+    def on_moved(self, event):
+        if not event.is_directory:
+            self._maybe_remove(Path(event.src_path))
+            self._maybe_index(Path(event.dest_path))
+
+    def _maybe_remove(self, path: Path) -> str | None:
+        if path.suffix.lower() not in IMAGE_EXTENSIONS:
+            return None
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.watch_dir):
+            return None
+        try:
+            status = self.indexer.remove_file(resolved)
+        except Exception as exc:
+            print(f"[anchor] failed to remove {resolved}: "
+                  f"{type(exc).__name__}", file=sys.stderr)
+            return None
+        if status == "removed":
+            print(f"[anchor] removed {resolved}", flush=True)
+        return status
+
     def _maybe_index(self, path: Path) -> str | None:
         if path.suffix.lower() not in IMAGE_EXTENSIONS:
             return None

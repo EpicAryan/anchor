@@ -53,6 +53,29 @@ def test_db_usable_from_worker_thread(tmp_path):
     assert errors == []
 
 
+def test_delete_document_returns_vector_ids_and_cascades(tmp_path):
+    db = MetadataDB(tmp_path / "test.db")
+    doc_id = db.upsert_document("screenshot", "/pics/a.png", "hash1")
+    db.replace_chunks(doc_id, ["one", "two"], ["v1", "v2"])
+    vids = db.delete_document("/pics/a.png")
+    assert sorted(vids) == ["v1", "v2"]
+    assert db.get_document("/pics/a.png") is None
+    remaining = db.conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    assert remaining == 0  # ON DELETE CASCADE cleaned the chunks
+
+
+def test_delete_document_unknown_path(tmp_path):
+    db = MetadataDB(tmp_path / "test.db")
+    assert db.delete_document("/pics/never-existed.png") == []
+
+
+def test_all_documents(tmp_path):
+    db = MetadataDB(tmp_path / "test.db")
+    db.upsert_document("screenshot", "/pics/a.png", "h1")
+    db.upsert_document("screenshot", "/pics/b.png", "h2")
+    assert sorted(db.all_documents()) == ["/pics/a.png", "/pics/b.png"]
+
+
 def test_sql_injection_in_path_is_inert(tmp_path):
     db = MetadataDB(tmp_path / "test.db")
     evil = "/pics/x'; DROP TABLE documents;--.png"
