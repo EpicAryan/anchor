@@ -54,7 +54,7 @@ class ScreenshotHandler(FileSystemEventHandler):
                   f"{type(exc).__name__}", file=sys.stderr)
             return None
         if status == "indexed":
-            print(f"[anchor] indexed {resolved}")
+            print(f"[anchor] indexed {resolved}", flush=True)
         return status
 
 
@@ -68,7 +68,7 @@ def run_watcher(watch_dir: Path, indexer) -> None:
     observer.schedule(handler, str(watch_dir), recursive=False)
     observer.start()
     mode = "polling every 2s" if polling else "inotify"
-    print(f"[anchor] watching {watch_dir} ({mode}, Ctrl-C to stop)")
+    print(f"[anchor] watching {watch_dir} ({mode}, Ctrl-C to stop)", flush=True)
     try:
         while True:
             time.sleep(1)
