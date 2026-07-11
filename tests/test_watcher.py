@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from anchor.watcher import MAX_FILE_BYTES, ScreenshotHandler
+from anchor.watcher import MAX_FILE_BYTES, ScreenshotHandler, _should_poll
 
 
 class RecordingIndexer:
@@ -62,6 +62,18 @@ def test_skips_non_image(tmp_path):
     p.write_text("hi")
     assert handler._maybe_index(p) is None
     assert idx.calls == []
+
+
+def test_should_poll_on_windows_mounts(monkeypatch):
+    monkeypatch.delenv("ANCHOR_FORCE_POLLING", raising=False)
+    # inotify events don't fire for Windows drives under WSL2; poll instead
+    assert _should_poll(Path("/mnt/c/Users/X/Pictures/anchor-screenshots")) is True
+    assert _should_poll(Path("/home/amour/shots")) is False
+
+
+def test_should_poll_env_override(monkeypatch):
+    monkeypatch.setenv("ANCHOR_FORCE_POLLING", "1")
+    assert _should_poll(Path("/home/amour/shots")) is True
 
 
 def test_indexer_exception_does_not_propagate(tmp_path):

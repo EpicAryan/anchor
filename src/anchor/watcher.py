@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from anchor.ocr import IMAGE_EXTENSIONS
 
 MAX_FILE_BYTES = 20_000_000
+
+
+def _should_poll(watch_dir: Path) -> bool:
+    """inotify events don't fire for Windows drives (/mnt/*) under WSL2,
+    so fall back to polling there. ANCHOR_FORCE_POLLING=1 forces it anywhere
+    (e.g. network mounts)."""
+    if os.environ.get("ANCHOR_FORCE_POLLING") == "1":
+        return True
+    return str(watch_dir).startswith("/mnt/")
 
 
 class ScreenshotHandler(FileSystemEventHandler):
@@ -52,10 +63,12 @@ def run_watcher(watch_dir: Path, indexer) -> None:
     if not watch_dir.is_dir():
         raise SystemExit(f"watch directory does not exist: {watch_dir}")
     handler = ScreenshotHandler(indexer, watch_dir)
-    observer = Observer()
+    polling = _should_poll(watch_dir)
+    observer = PollingObserver(timeout=2) if polling else Observer()
     observer.schedule(handler, str(watch_dir), recursive=False)
     observer.start()
-    print(f"[anchor] watching {watch_dir} (Ctrl-C to stop)")
+    mode = "polling every 2s" if polling else "inotify"
+    print(f"[anchor] watching {watch_dir} ({mode}, Ctrl-C to stop)")
     try:
         while True:
             time.sleep(1)
