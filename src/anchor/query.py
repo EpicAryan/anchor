@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from anchor.config import Config
@@ -33,8 +34,21 @@ class Answer:
     sources: list[str]
 
 
+_TYPE_KEYWORDS = {
+    "screenshot": "screenshot", "image": "screenshot",
+    "pdf": "pdf", "document": "pdf",
+    "note": "note",
+    "code": "code", "script": "code",
+}
+
+
 def infer_source_type(question: str) -> str | None:
-    return "screenshot" if "screenshot" in question.lower() else None
+    for word in re.findall(r"[a-z]+", question.lower()):
+        singular = word[:-1] if word.endswith("s") else word
+        for candidate in (word, singular):
+            if candidate in _TYPE_KEYWORDS:
+                return _TYPE_KEYWORDS[candidate]
+    return None
 
 
 def _extractive_fallback(hits: list[dict], reason: str) -> str:
@@ -46,14 +60,14 @@ def _extractive_fallback(hits: list[dict], reason: str) -> str:
 
 
 def find_matches(question: str, *, config: Config, embedder: Embedder,
-                 store: VectorStore) -> list[dict]:
+                 store: VectorStore, source_type: str | None = None) -> list[dict]:
     """Pure retrieval — no LLM, nothing leaves the machine.
 
     Returns [{path, snippet, distance}], nearest first, best chunk per file.
     """
     hits = store.query(embedder.embed_query(question),
                        top_k=config.top_k,
-                       source_type=infer_source_type(question))
+                       source_type=source_type or infer_source_type(question))
     best: dict[str, dict] = {}
     for h in hits:  # hits arrive nearest-first; keep the first per file
         path = h["metadata"]["source_path"]
@@ -65,10 +79,11 @@ def find_matches(question: str, *, config: Config, embedder: Embedder,
 
 
 def answer_question(question: str, *, config: Config, embedder: Embedder,
-                    store: VectorStore, provider: LLMProvider) -> Answer:
+                    store: VectorStore, provider: LLMProvider,
+                    source_type: str | None = None) -> Answer:
     hits = store.query(embedder.embed_query(question),
                        top_k=config.top_k,
-                       source_type=infer_source_type(question))
+                       source_type=source_type or infer_source_type(question))
     if not hits:
         return Answer("No indexed content matched your question.", [])
 

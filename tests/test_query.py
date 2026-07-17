@@ -121,3 +121,35 @@ def test_find_matches_empty_store():
     matches = find_matches("anything", config=Config(),
                            embedder=FakeEmbedder(), store=FakeStore([]))
     assert matches == []
+
+
+def test_infer_source_type_all_types():
+    assert infer_source_type("show me the screenshot of that error") == "screenshot"
+    assert infer_source_type("which images mention the dashboard") == "screenshot"
+    assert infer_source_type("that pdf about invoices") == "pdf"
+    assert infer_source_type("search my pdfs for the contract") == "pdf"
+    assert infer_source_type("the document I saved about taxes") == "pdf"
+    assert infer_source_type("my note on deployment") == "note"
+    assert infer_source_type("notes about standup") == "note"
+    assert infer_source_type("the code that retries requests") == "code"
+    assert infer_source_type("that script for backups") == "code"
+    assert infer_source_type("what did I save about invoices") is None
+
+
+def test_infer_source_type_matches_words_not_substrings():
+    assert infer_source_type("the encoded value in the response") is None
+    assert infer_source_type("the postscript at the end") is None
+
+
+def test_explicit_source_type_overrides_inference():
+    store = FakeStore([])
+    find_matches("screenshot of the invoice", config=Config(),
+                 embedder=FakeEmbedder(), store=store, source_type="pdf")
+    assert store.last_source_type == "pdf"
+
+
+def test_source_type_none_falls_back_to_inference():
+    store = FakeStore([])
+    find_matches("screenshot of the invoice", config=Config(),
+                 embedder=FakeEmbedder(), store=store)
+    assert store.last_source_type == "screenshot"
