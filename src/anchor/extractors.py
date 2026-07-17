@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from anchor.ocr import IMAGE_EXTENSIONS, extract_text_from_image
+from anchor.pdf import extract_text_from_pdf
 
 NOTE_EXTENSIONS = {".md", ".txt", ".rst"}
 CODE_EXTENSIONS = {
@@ -15,6 +16,7 @@ EXTENSION_TYPES: dict[str, str] = {
     **{ext: "screenshot" for ext in IMAGE_EXTENSIONS},
     **{ext: "note" for ext in NOTE_EXTENSIONS},
     **{ext: "code" for ext in CODE_EXTENSIONS},
+    ".pdf": "pdf",
 }
 
 
@@ -30,6 +32,7 @@ _EXTRACTORS = {
     "screenshot": _extract_image,
     "note": _read_text,
     "code": _read_text,
+    "pdf": lambda path: extract_text_from_pdf(path),
 }
 
 
