@@ -21,6 +21,39 @@ the same citation format. Phase 1 already stores a `source_type` on every
 document and chunk and can filter queries by it, so the storage and query
 layers need no schema change.
 
+### 1.1 The problem (user's perspective)
+
+Personal knowledge is scattered across file formats, and no single local tool
+searches inside all of them by meaning:
+
+- People remember *what something was about*, not its filename or format.
+  "That doc about the invoice approval flow" could be a PDF, a note, or a
+  screenshot — today that means searching three apps three different ways.
+- OS file search barely reads inside PDFs and matches keywords only; a note
+  that says "authentication issue" is invisible to a search for "login bug".
+  Anchor matches by meaning.
+- **Scanned PDFs (receipts, signed forms, old records) are invisible to every
+  normal search tool** — they are pictures of text. Phase 2 OCRs them.
+- Code search (grep/IDE) needs exact strings and one project at a time;
+  anchor answers "where do we configure the retry backoff?" in plain English
+  across any folder the user points it at.
+
+After Phase 2, one command searches all of it at once and cites the actual
+file paths, so the user always lands back at the original file.
+
+### 1.2 What makes anchor different
+
+- **Local-first vs. cloud "chat with your docs" tools** (NotebookLM, ChatGPT
+  uploads): those require uploading files to a server. Anchor's corpus never
+  leaves the machine; at most the top-k matching snippets (a few KB, secrets
+  redacted) go out, only with explicit consent; `--local` sends nothing ever.
+- **Deliberate ingestion vs. Recall-style capture-everything**: anchor reads
+  only folders the user configured or explicitly pointed it at, and
+  hard-blocks secret files from ever entering the index.
+- **One semantic index across formats** — screenshots + scanned/digital PDFs
+  + notes + code — free (no paid APIs), offline-capable (extractive mode),
+  with honest citations (deleted files never appear in answers).
+
 ## 2. Goals
 
 1. `anchor index` / `anchor watch` / `anchor prune` operate over a **list of
@@ -258,6 +291,10 @@ curated-list decision.
 - Git: plain commits, no co-author trailers.
 - New system dependency `poppler-utils` installed manually by the user via
   sudo (same procedure as tesseract in Phase 1).
+- **All Python dependencies install into the project virtual environment
+  only** (`.venv/bin/pip` in the repo) — never global pip, never system
+  Python. Apt-installed system packages (tesseract, poppler) are the sole
+  exception and are always run manually by the user.
 
 ## 9. Assumptions
 
