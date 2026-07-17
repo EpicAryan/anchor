@@ -8,8 +8,9 @@ from anchor.chunking import chunk_text
 from anchor.config import Config
 from anchor.db import MetadataDB
 from anchor.embedder import Embedder
-from anchor.ocr import IMAGE_EXTENSIONS, extract_text_from_image
+from anchor.extractors import classify, extract
 from anchor.vectorstore import VectorStore
+from anchor.walker import is_secret_file
 
 
 class Indexer:
@@ -22,7 +23,9 @@ class Indexer:
 
     def index_file(self, path: Path) -> str:
         path = path.resolve()
-        if path.suffix.lower() not in IMAGE_EXTENSIONS:
+        if is_secret_file(path):
+            return "blocked"
+        if classify(path) is None:
             return "unsupported"
 
         content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -30,8 +33,8 @@ class Indexer:
         if existing and existing[1] == content_hash:
             return "unchanged"
 
-        text = extract_text_from_image(path)
-        doc_id = self.db.upsert_document("screenshot", str(path), content_hash)
+        source_type, text = extract(path)
+        doc_id = self.db.upsert_document(source_type, str(path), content_hash)
 
         chunks = chunk_text(text, self.config.chunk_size, self.config.chunk_overlap)
         if not chunks:
@@ -45,7 +48,7 @@ class Indexer:
         self.store.delete(old)
         self.store.add(
             vector_ids, embeddings, chunks,
-            [{"document_id": doc_id, "source_type": "screenshot",
+            [{"document_id": doc_id, "source_type": source_type,
               "source_path": str(path)} for _ in chunks],
         )
         return "indexed"

@@ -20,8 +20,9 @@ class FakeModel:
 @pytest.fixture
 def indexer(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        indexer_mod, "extract_text_from_image",
-        lambda path: "TypeError: module object is not callable in views.py")
+        indexer_mod, "extract",
+        lambda path: ("screenshot",
+                      "TypeError: module object is not callable in views.py"))
     config = Config(data_dir=tmp_path / "data")
     db = MetadataDB(config.db_path)
     embedder = Embedder()
@@ -62,13 +63,14 @@ def test_changed_file_reindexed_without_stale_vectors(indexer, tmp_path):
 
 
 def test_unsupported_extension(indexer, tmp_path):
-    p = tmp_path / "notes.txt"
-    p.write_text("hello")
+    p = tmp_path / "archive.zip"
+    p.write_text("binary-ish")
     assert indexer.index_file(p) == "unsupported"
 
 
 def test_empty_ocr_result(indexer, tmp_path, monkeypatch):
-    monkeypatch.setattr(indexer_mod, "extract_text_from_image", lambda path: "")
+    monkeypatch.setattr(indexer_mod, "extract",
+                        lambda path: ("screenshot", ""))
     p = make_png(tmp_path)
     assert indexer.index_file(p) == "empty"
 
@@ -112,3 +114,36 @@ def test_prune_scoped_to_directory(indexer, tmp_path):
     removed = indexer.prune(under=tmp_path / "elsewhere")
     assert removed == [str(outside.resolve())]           # scoped: only elsewhere/
     assert indexer.db.get_document(str(inside.resolve())) is not None
+
+
+def test_note_indexed_with_note_source_type(tmp_path, monkeypatch):
+    # Real extractor path (no mock): a markdown file becomes a "note" doc.
+    config = Config(data_dir=tmp_path / "data")
+    db = MetadataDB(config.db_path)
+    embedder = Embedder()
+    embedder._model = FakeModel()
+    store = VectorStore(config.vector_dir)
+    idx = Indexer(db, embedder, store, config)
+    p = tmp_path / "deploy.md"
+    p.write_text("# Deploy checklist: rotate the api gateway keys")
+    assert idx.index_file(p) == "indexed"
+    hits = store.query(embedder.embed_query("deploy"), top_k=1)
+    assert hits[0]["metadata"]["source_type"] == "note"
+    assert hits[0]["metadata"]["source_path"] == str(p.resolve())
+
+
+def test_secret_file_blocked_and_never_stored(indexer, tmp_path):
+    p = tmp_path / ".env"
+    p.write_text("GROQ_API_KEY=gsk_realkey")
+    assert indexer.index_file(p) == "blocked"
+    assert indexer.db.get_document(str(p.resolve())) is None
+    assert indexer.store.query(
+        indexer.embedder.embed_query("GROQ_API_KEY"), top_k=5) == []
+
+
+def test_secret_file_blocked_before_unsupported_check(indexer, tmp_path):
+    # .pem isn't even a supported extension, but "blocked" must win so a
+    # future extension addition can't accidentally open a secrets hole.
+    p = tmp_path / "server.pem"
+    p.write_text("---BEGIN PRIVATE KEY---")
+    assert indexer.index_file(p) == "blocked"
