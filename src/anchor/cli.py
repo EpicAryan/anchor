@@ -20,10 +20,10 @@ from anchor.config import Config, load_config
 from anchor.db import MetadataDB
 from anchor.embedder import Embedder
 from anchor.indexer import Indexer
-from anchor.ocr import IMAGE_EXTENSIONS
 from anchor.providers import ProviderError, get_provider
 from anchor.query import answer_question, find_matches
 from anchor.vectorstore import VectorStore
+from anchor.walker import iter_files
 from anchor.watcher import run_watcher
 
 
@@ -34,23 +34,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_index = sub.add_parser("index", help="index a file or directory")
     p_index.add_argument("path", nargs="?", default=None,
-                         help="file or folder (default: configured watch_dir)")
+                         help="file or folder (default: all configured watch folders)")
 
-    p_watch = sub.add_parser("watch", help="watch the screenshots folder")
-    p_watch.add_argument("--dir", default=None,
-                         help="override configured watch directory")
+    p_watch = sub.add_parser("watch", help="watch folders for changes")
+    p_watch.add_argument("path", nargs="?", default=None,
+                         help="folder to watch (default: all configured "
+                              "watch folders)")
+    p_watch.add_argument("--dir", default=None, help=argparse.SUPPRESS)
 
-    sub.add_parser("prune",
-                   help="remove index entries for files deleted from disk")
+    p_prune = sub.add_parser(
+        "prune", help="remove index entries for files deleted from disk")
+    p_prune.add_argument("path", nargs="?", default=None,
+                         help="only prune entries under this folder")
 
     p_find = sub.add_parser(
-        "find", help="list screenshots matching a phrase (no LLM, fully local)")
+        "find", help="list files matching a phrase (no LLM, fully local)")
     p_find.add_argument("question")
+    p_find.add_argument("--type", choices=("screenshot", "pdf", "note", "code"),
+                        default=None, help="only search this source type")
     p_find.add_argument("-k", type=int, default=None,
                         help="max results (default 10)")
 
     p_ask = sub.add_parser("ask", help="ask a question")
     p_ask.add_argument("question")
+    p_ask.add_argument("--type", choices=("screenshot", "pdf", "note", "code"),
+                       default=None, help="only search this source type")
     p_ask.add_argument("--cloud", action="store_true",
                        help="one-shot consent to send redacted snippets "
                             "to the configured cloud provider")
@@ -93,22 +101,30 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "index":
         indexer = _make_indexer(config)
-        target = Path(args.path).expanduser() if args.path else config.watch_dir
-        files = ([target] if target.is_file() else
-                 sorted(p for p in target.iterdir()
-                        if p.suffix.lower() in IMAGE_EXTENSIONS))
-        for f in files:
-            print(f"{indexer.index_file(f):>12}  {f}")
-        pruned = indexer.prune(under=target) if target.is_dir() else []
-        for p in pruned:
-            print(f"{'removed':>12}  {p}")
-        if not files and not pruned:
+        targets = ([Path(args.path).expanduser()] if args.path
+                   else list(config.watch_dirs))
+        printed = 0
+        for target in targets:
+            files = [target] if target.is_file() else list(iter_files(target))
+            for f in files:
+                try:
+                    status = indexer.index_file(f)
+                except Exception as exc:
+                    status = f"error:{type(exc).__name__}"
+                print(f"{status:>12}  {f}")
+                printed += 1
+            if target.is_dir():
+                for p in indexer.prune(under=target):
+                    print(f"{'removed':>12}  {p}")
+                    printed += 1
+        if not printed:
             print("nothing to index", file=sys.stderr)
             return 1
         return 0
 
     if args.command == "prune":
-        removed = _make_indexer(config).prune()
+        under = Path(args.path).expanduser() if args.path else None
+        removed = _make_indexer(config).prune(under=under)
         if not removed:
             print("nothing to prune — index matches disk")
         for p in removed:
@@ -116,15 +132,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "watch":
-        watch_dir = Path(args.dir).expanduser() if args.dir else config.watch_dir
-        run_watcher(watch_dir, _make_indexer(config))
+        chosen = args.path or args.dir
+        roots = ([Path(chosen).expanduser()] if chosen
+                 else list(config.watch_dirs))
+        run_watcher(roots, _make_indexer(config))
         return 0
 
     if args.command == "find":
         config.top_k = args.k or 10
         matches = find_matches(
             args.question, config=config, embedder=Embedder(),
-            store=VectorStore(config.vector_dir))
+            store=VectorStore(config.vector_dir), source_type=args.type)
         if not matches:
             print("no matches")
             return 1
@@ -149,7 +167,8 @@ def main(argv: list[str] | None = None) -> int:
                   f"(redacted snippets will be sent)", file=sys.stderr)
         ans = answer_question(
             args.question, config=config, embedder=Embedder(),
-            store=VectorStore(config.vector_dir), provider=provider)
+            store=VectorStore(config.vector_dir), provider=provider,
+            source_type=args.type)
         _print_answer(ans)
         return 0
 
