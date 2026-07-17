@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 DEFAULT_DATA_DIR = Path.home() / ".anchor"
@@ -12,12 +12,18 @@ DEFAULT_DATA_DIR = Path.home() / ".anchor"
 @dataclass
 class Config:
     data_dir: Path = DEFAULT_DATA_DIR
-    watch_dir: Path = Path.home() / "Screenshots"
+    watch_dirs: list[Path] = field(
+        default_factory=lambda: [Path.home() / "Screenshots"])
     allow_cloud: bool = False
     cloud_provider: str = "gemini"
     top_k: int = 5
     chunk_size: int = 1500
     chunk_overlap: int = 200
+
+    @property
+    def watch_dir(self) -> Path:
+        """Back-compat: Phase 1 call sites read the (first) watch folder."""
+        return self.watch_dirs[0]
 
     @property
     def db_path(self) -> Path:
@@ -54,13 +60,20 @@ def load_config(data_dir: Path | None = None) -> Config:
     config_file = data_dir / "config.json"
     if config_file.exists():
         raw = json.loads(config_file.read_text())
+        legacy = raw.pop("watch_dir", None)
         valid = {f.name for f in fields(Config)}
         for key, value in raw.items():
             if key not in valid or key == "data_dir":
                 continue
-            if key == "watch_dir":
-                value = Path(value)
+            if key == "watch_dirs":
+                value = [Path(v).expanduser() for v in value]
             setattr(cfg, key, value)
+        if legacy is not None:
+            legacy_path = Path(legacy).expanduser()
+            if "watch_dirs" not in raw:
+                cfg.watch_dirs = [legacy_path]
+            elif legacy_path not in cfg.watch_dirs:
+                cfg.watch_dirs.insert(0, legacy_path)
 
     load_env_file(data_dir / "env")
     return cfg

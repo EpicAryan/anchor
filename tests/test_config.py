@@ -1,5 +1,6 @@
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -51,3 +52,36 @@ def test_env_file_rejected_if_world_readable(tmp_path):
 
 def test_missing_env_file_is_fine(tmp_path):
     load_env_file(tmp_path / "does-not-exist")  # must not raise
+
+
+def test_watch_dirs_defaults_to_single_screenshots_dir(tmp_path):
+    cfg = load_config(tmp_path / "d")
+    assert cfg.watch_dirs == [Path.home() / "Screenshots"]
+    assert cfg.watch_dir == cfg.watch_dirs[0]       # back-compat property
+
+
+def test_watch_dirs_list_parsed_from_config(tmp_path):
+    data_dir = tmp_path / "d"
+    data_dir.mkdir(mode=0o700)
+    (data_dir / "config.json").write_text(
+        '{"watch_dirs": ["/tmp/shots", "/tmp/notes"]}')
+    cfg = load_config(data_dir)
+    assert cfg.watch_dirs == [Path("/tmp/shots"), Path("/tmp/notes")]
+
+
+def test_legacy_watch_dir_key_becomes_watch_dirs(tmp_path):
+    data_dir = tmp_path / "d"
+    data_dir.mkdir(mode=0o700)
+    (data_dir / "config.json").write_text('{"watch_dir": "/tmp/old"}')
+    cfg = load_config(data_dir)
+    assert cfg.watch_dirs == [Path("/tmp/old")]
+    assert cfg.watch_dir == Path("/tmp/old")
+
+
+def test_legacy_watch_dir_prepended_when_both_present(tmp_path):
+    data_dir = tmp_path / "d"
+    data_dir.mkdir(mode=0o700)
+    (data_dir / "config.json").write_text(
+        '{"watch_dir": "/tmp/old", "watch_dirs": ["/tmp/new"]}')
+    cfg = load_config(data_dir)
+    assert cfg.watch_dirs == [Path("/tmp/old"), Path("/tmp/new")]
