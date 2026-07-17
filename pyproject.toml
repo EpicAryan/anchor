@@ -10,6 +10,8 @@ dependencies = [
     "chromadb>=0.5",
     "sentence-transformers>=3",
     "requests>=2.31",
+    "pypdf>=4",
+    "pdf2image>=1.17",
 ]
 
 [project.optional-dependencies]
