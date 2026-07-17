@@ -6,7 +6,7 @@ embeds the text locally, answers questions from the command line.
 ## Setup
 
 ```bash
-sudo apt-get install -y tesseract-ocr
+sudo apt-get install -y tesseract-ocr poppler-utils
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```
@@ -14,22 +14,36 @@ python3 -m venv .venv
 ## Usage
 
 ```bash
-anchor index                        # sync the watch folder (adds new, removes deleted)
+anchor index                        # sync ALL watch folders (adds new, removes deleted)
+anchor index ~/any/folder           # index any folder on demand (recursive)
 anchor watch                        # live: indexes new files, forgets deleted ones
 anchor ask "screenshot of the module object is not callable error"
-anchor find "dashboard"             # just list matching files (no LLM, offline)
-anchor prune                        # drop index entries for files deleted anywhere
+anchor ask "what does my note say about the deploy checklist"
+anchor find "dashboard" --type pdf  # list matching PDFs (no LLM, offline)
+anchor prune                        # drop index entries for deleted files
 ```
+
+Indexes screenshots (OCR), PDFs (digital + scanned via OCR), notes
+(`.md .txt .rst`), and code/config files. Folders are walked recursively;
+`.git`, `node_modules`, virtualenvs, hidden and build directories are
+skipped, and secret-shaped files (`.env*`, `*.pem`, `*.key`, `id_rsa*`,
+`credentials*`, …) are never indexed.
 
 Config lives in `~/.anchor/config.json`:
 
 ```json
 {
-  "watch_dir": "/mnt/c/Users/YOU/Pictures/Screenshots",
+  "watch_dirs": [
+    "/mnt/c/Users/YOU/Pictures/Screenshots",
+    "/mnt/c/Users/YOU/Documents/pdfs",
+    "/mnt/c/Users/YOU/Documents/notes"
+  ],
   "allow_cloud": true,
   "cloud_provider": "gemini"
 }
 ```
+
+(The old single `"watch_dir"` key still works.)
 
 ## Cloud LLMs (optional, off by default)
 
@@ -60,8 +74,10 @@ To use a free-tier cloud LLM for synthesized answers:
 - **Prompt injection**: OCR'd text is untrusted; the prompt instructs the
   model to treat snippets as data. Treat answers about "what to run next"
   with normal skepticism — this mitigates, not eliminates, injection.
-- **Filesystem**: watcher ignores symlinks, paths outside the watch dir, and
-  files > 20 MB. Data dir is `0700`, SQLite file `0600`.
+- **Filesystem**: watcher and indexer skip symlinks, paths outside watched
+  roots, oversized files (20 MB; 50 MB for PDFs), and excluded directories —
+  and secret-shaped files are blocked from the index entirely (redaction
+  only guards cloud egress). Data dir is `0700`, SQLite file `0600`.
 
 ## Known free-tier limits (July 2026 — recheck before relying on them)
 
