@@ -9,9 +9,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from anchor.ocr import IMAGE_EXTENSIONS
+from anchor.walker import (MAX_FILE_BYTES, is_indexable,  # noqa: F401
+                           passes_static_gates)
 
-MAX_FILE_BYTES = 20_000_000
+# MAX_FILE_BYTES is re-exported: Phase 1 tests import it from here.
 
 
 def _should_poll(watch_dir: Path) -> bool:
@@ -23,7 +24,10 @@ def _should_poll(watch_dir: Path) -> bool:
     return str(watch_dir).startswith("/mnt/")
 
 
-class ScreenshotHandler(FileSystemEventHandler):
+class WatchHandler(FileSystemEventHandler):
+    """One handler per watched root; every gate delegates to walker so the
+    watcher and `anchor index` can never disagree about what's indexable."""
+
     def __init__(self, indexer, watch_dir: Path):
         self.indexer = indexer
         self.watch_dir = watch_dir.resolve()
@@ -46,11 +50,9 @@ class ScreenshotHandler(FileSystemEventHandler):
             self._maybe_index(Path(event.dest_path))
 
     def _maybe_remove(self, path: Path) -> str | None:
-        if path.suffix.lower() not in IMAGE_EXTENSIONS:
+        if not passes_static_gates(path, self.watch_dir):
             return None
         resolved = path.resolve()
-        if not resolved.is_relative_to(self.watch_dir):
-            return None
         try:
             status = self.indexer.remove_file(resolved)
         except Exception as exc:
@@ -62,16 +64,10 @@ class ScreenshotHandler(FileSystemEventHandler):
         return status
 
     def _maybe_index(self, path: Path) -> str | None:
-        if path.suffix.lower() not in IMAGE_EXTENSIONS:
-            return None
-        if path.is_symlink():
+        if not is_indexable(path, self.watch_dir):
             return None
         resolved = path.resolve()
-        if not resolved.is_relative_to(self.watch_dir):
-            return None
         try:
-            if resolved.stat().st_size > MAX_FILE_BYTES:
-                return None
             status = self.indexer.index_file(resolved)
         except Exception as exc:
             # Log the path and error class only — never file content.
@@ -83,20 +79,33 @@ class ScreenshotHandler(FileSystemEventHandler):
         return status
 
 
-def run_watcher(watch_dir: Path, indexer) -> None:
-    watch_dir = watch_dir.expanduser()
-    if not watch_dir.is_dir():
-        raise SystemExit(f"watch directory does not exist: {watch_dir}")
-    handler = ScreenshotHandler(indexer, watch_dir)
-    polling = _should_poll(watch_dir)
-    observer = PollingObserver(timeout=2) if polling else Observer()
-    observer.schedule(handler, str(watch_dir), recursive=False)
-    observer.start()
-    mode = "polling every 2s" if polling else "inotify"
-    print(f"[anchor] watching {watch_dir} ({mode}, Ctrl-C to stop)", flush=True)
+def run_watcher(roots: list[Path], indexer) -> None:
+    roots = [r.expanduser() for r in roots]
+    missing = [r for r in roots if not r.is_dir()]
+    if missing:
+        raise SystemExit(
+            f"watch directories do not exist: {', '.join(map(str, missing))}")
+
+    observers: dict[str, object] = {}
+    for root in roots:
+        polling = _should_poll(root)
+        backend = "polling" if polling else "inotify"
+        if backend not in observers:
+            observers[backend] = (PollingObserver(timeout=2) if polling
+                                  else Observer())
+        observers[backend].schedule(
+            WatchHandler(indexer, root), str(root), recursive=True)
+        mode = "polling every 2s" if polling else "inotify"
+        print(f"[anchor] watching {root} ({mode})", flush=True)
+
+    for obs in observers.values():
+        obs.start()
+    print("[anchor] Ctrl-C to stop", flush=True)
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
+        for obs in observers.values():
+            obs.stop()
+    for obs in observers.values():
+        obs.join()

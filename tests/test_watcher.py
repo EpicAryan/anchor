@@ -1,16 +1,18 @@
 import os
 from pathlib import Path
 
-from anchor.watcher import MAX_FILE_BYTES, ScreenshotHandler, _should_poll
+from anchor.watcher import MAX_FILE_BYTES, WatchHandler, _should_poll
 
 
 class RecordingIndexer:
     def __init__(self):
         self.calls = []
+        self.indexed = []
         self.removed = []
 
     def index_file(self, path):
         self.calls.append(path)
+        self.indexed.append(path)
         return "indexed"
 
     def remove_file(self, path):
@@ -22,7 +24,7 @@ def make_handler(tmp_path):
     watch_dir = tmp_path / "shots"
     watch_dir.mkdir()
     idx = RecordingIndexer()
-    return ScreenshotHandler(idx, watch_dir), idx, watch_dir
+    return WatchHandler(idx, watch_dir), idx, watch_dir
 
 
 def test_indexes_new_png(tmp_path):
@@ -61,12 +63,12 @@ def test_skips_oversized_file(tmp_path):
     assert idx.calls == []
 
 
-def test_skips_non_image(tmp_path):
+def test_skips_unsupported_extension(tmp_path):
     handler, idx, watch_dir = make_handler(tmp_path)
-    p = watch_dir / "notes.txt"
-    p.write_text("hi")
+    p = watch_dir / "archive.zip"
+    p.write_text("not indexable")
     assert handler._maybe_index(p) is None
-    assert idx.calls == []
+    assert idx.indexed == []
 
 
 def test_should_poll_on_windows_mounts(monkeypatch):
@@ -88,9 +90,9 @@ def test_deleted_file_removed_from_index(tmp_path):
     assert idx.removed == [(watch_dir / "old.png").resolve()]
 
 
-def test_deleted_non_image_ignored(tmp_path):
+def test_deleted_unsupported_extension_ignored(tmp_path):
     handler, idx, watch_dir = make_handler(tmp_path)
-    assert handler._maybe_remove(watch_dir / "notes.txt") is None
+    assert handler._maybe_remove(watch_dir / "archive.zip") is None
     assert idx.removed == []
 
 
@@ -107,7 +109,41 @@ def test_indexer_exception_does_not_propagate(tmp_path):
 
     watch_dir = tmp_path / "shots"
     watch_dir.mkdir()
-    handler = ScreenshotHandler(ExplodingIndexer(), watch_dir)
+    handler = WatchHandler(ExplodingIndexer(), watch_dir)
     p = watch_dir / "bad.png"
     p.write_bytes(b"fake")
     assert handler._maybe_index(p) is None  # must not raise
+
+
+def test_indexes_nested_note(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    nested = watch_dir / "topics" / "deploy"
+    nested.mkdir(parents=True)
+    p = nested / "checklist.md"
+    p.write_text("rotate keys")
+    assert handler._maybe_index(p) == "indexed"
+    assert idx.indexed == [p.resolve()]
+
+
+def test_skips_file_in_excluded_dir(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    dep = watch_dir / "node_modules" / "lib"
+    dep.mkdir(parents=True)
+    p = dep / "dep.js"
+    p.write_text("junk")
+    assert handler._maybe_index(p) is None
+    assert idx.indexed == []
+
+
+def test_secret_file_event_never_indexed(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    p = watch_dir / ".env"
+    p.write_text("API_KEY=oops")
+    assert handler._maybe_index(p) is None
+    assert idx.indexed == []
+
+
+def test_deleted_secret_file_ignored(tmp_path):
+    handler, idx, watch_dir = make_handler(tmp_path)
+    assert handler._maybe_remove(watch_dir / ".env") is None
+    assert idx.removed == []
