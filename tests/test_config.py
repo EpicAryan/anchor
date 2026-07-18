@@ -85,3 +85,11 @@ def test_legacy_watch_dir_prepended_when_both_present(tmp_path):
         '{"watch_dir": "/tmp/old", "watch_dirs": ["/tmp/new"]}')
     cfg = load_config(data_dir)
     assert cfg.watch_dirs == [Path("/tmp/old"), Path("/tmp/new")]
+
+
+def test_malformed_watch_dirs_string_raises(tmp_path):
+    data_dir = tmp_path / "d"
+    data_dir.mkdir(mode=0o700)
+    (data_dir / "config.json").write_text('{"watch_dirs": "/tmp/x"}')
+    with pytest.raises(ValueError):
+        load_config(data_dir)

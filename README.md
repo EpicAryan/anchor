@@ -1,7 +1,8 @@
-# anchor — Personal Knowledge OS (Phase 1: Screenshot Intelligence)
+# anchor — Personal Knowledge OS
 
-Local-first search over your screenshots. Watches a folder, OCRs every image,
-embeds the text locally, answers questions from the command line.
+Local-first search over your screenshots, PDFs, notes, and code. Watches
+folders, extracts text (OCR for images and scanned PDFs), embeds locally,
+answers questions from the command line.
 
 ## Setup
 

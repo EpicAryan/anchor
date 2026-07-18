@@ -1,7 +1,10 @@
+import os
+
 import pytest
 
 from anchor.cli import build_parser, resolve_provider_name
 from anchor.config import Config
+from anchor.walker import MAX_FILE_BYTES
 
 
 def test_parser_commands():
@@ -58,6 +61,79 @@ def test_index_command_walks_all_configured_roots(tmp_path, monkeypatch):
     monkeypatch.setattr(cli_mod, "_make_indexer", lambda c: fake)
     assert cli_mod.main(["index"]) == 0
     assert fake.paths == [(root_b / "sub" / "n.md")]
+
+
+def test_index_command_single_indexable_file(tmp_path, monkeypatch, capsys):
+    import anchor.cli as cli_mod
+    f = tmp_path / "note.md"
+    f.write_text("hello")
+
+    class FakeIndexer:
+        def __init__(self):
+            self.paths = []
+        def index_file(self, p):
+            self.paths.append(p)
+            return "indexed"
+        def prune(self, under=None):
+            return []
+
+    fake = FakeIndexer()
+    cfg = Config(data_dir=tmp_path / "data")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(cli_mod, "_make_indexer", lambda c: fake)
+    assert cli_mod.main(["index", str(f)]) == 0
+    assert fake.paths == [f]
+    out = capsys.readouterr().out
+    assert "indexed" in out
+
+
+def test_index_command_single_oversized_file_is_skipped(tmp_path, monkeypatch, capsys):
+    import anchor.cli as cli_mod
+    f = tmp_path / "big.md"
+    f.write_text("x")
+    os.truncate(f, MAX_FILE_BYTES + 1)     # sparse file, no real disk usage
+
+    class FakeIndexer:
+        def __init__(self):
+            self.calls = 0
+        def index_file(self, p):
+            self.calls += 1
+            return "indexed"
+        def prune(self, under=None):
+            return []
+
+    fake = FakeIndexer()
+    cfg = Config(data_dir=tmp_path / "data")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(cli_mod, "_make_indexer", lambda c: fake)
+    assert cli_mod.main(["index", str(f)]) == 0
+    assert fake.calls == 0
+    out = capsys.readouterr().out
+    assert "skipped" in out
+
+
+def test_index_command_single_secret_file_still_flows_to_indexer(tmp_path, monkeypatch, capsys):
+    import anchor.cli as cli_mod
+    f = tmp_path / ".env"
+    f.write_text("API_KEY=supersecret")
+
+    class FakeIndexer:
+        def __init__(self):
+            self.paths = []
+        def index_file(self, p):
+            self.paths.append(p)
+            return "blocked"
+        def prune(self, under=None):
+            return []
+
+    fake = FakeIndexer()
+    cfg = Config(data_dir=tmp_path / "data")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(cli_mod, "_make_indexer", lambda c: fake)
+    assert cli_mod.main(["index", str(f)]) == 0
+    assert fake.paths == [f]
+    out = capsys.readouterr().out
+    assert "blocked" in out
 
 
 def test_provider_resolution_defaults_to_local():

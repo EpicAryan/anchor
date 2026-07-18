@@ -66,6 +66,9 @@ def load_config(data_dir: Path | None = None) -> Config:
             if key not in valid or key == "data_dir":
                 continue
             if key == "watch_dirs":
+                if not isinstance(value, list):
+                    raise ValueError(
+                        "watch_dirs in config.json must be a list of paths")
                 value = [Path(v).expanduser() for v in value]
             setattr(cfg, key, value)
         if legacy is not None:

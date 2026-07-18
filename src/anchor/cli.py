@@ -23,7 +23,7 @@ from anchor.indexer import Indexer
 from anchor.providers import ProviderError, get_provider
 from anchor.query import answer_question, find_matches
 from anchor.vectorstore import VectorStore
-from anchor.walker import iter_files
+from anchor.walker import is_indexable, is_secret_file, iter_files
 from anchor.watcher import run_watcher
 
 
@@ -105,7 +105,15 @@ def main(argv: list[str] | None = None) -> int:
                    else list(config.watch_dirs))
         printed = 0
         for target in targets:
-            files = [target] if target.is_file() else list(iter_files(target))
+            if target.is_file():
+                if is_secret_file(target) or is_indexable(target, target.parent):
+                    files = [target]
+                else:
+                    print(f"{'skipped':>12}  {target}")
+                    printed += 1
+                    files = []
+            else:
+                files = list(iter_files(target))
             for f in files:
                 try:
                     status = indexer.index_file(f)
