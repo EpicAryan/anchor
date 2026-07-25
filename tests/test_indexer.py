@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 
 import pytest
@@ -147,3 +148,63 @@ def test_secret_file_blocked_before_unsupported_check(indexer, tmp_path):
     p = tmp_path / "server.pem"
     p.write_text("---BEGIN PRIVATE KEY---")
     assert indexer.index_file(p) == "blocked"
+
+
+class ConcurrencyProbeModel:
+    """Records the peak number of threads inside encode() at once. The
+    watcher shares one Indexer (one SQLite conn, one model) across a polling
+    and an inotify observer thread, so index_file must serialize itself."""
+
+    def __init__(self):
+        import numpy as np
+        self._np = np
+        self._lock = threading.Lock()
+        self.active = 0
+        self.max_active = 0
+
+    def encode(self, texts, normalize_embeddings=True):
+        import time
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        time.sleep(0.05)          # widen the window a real overlap would use
+        with self._lock:
+            self.active -= 1
+        return self._np.array([[float(len(t)) % 7, 1.0, 2.0] for t in texts])
+
+
+def test_index_file_serializes_concurrent_callers(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        indexer_mod, "extract",
+        lambda path: ("note", "some indexable body text for chunking"))
+    config = Config(data_dir=tmp_path / "data")
+    embedder = Embedder()
+    probe = ConcurrencyProbeModel()
+    embedder._model = probe
+    idx = Indexer(MetadataDB(config.db_path), embedder,
+                  VectorStore(config.vector_dir), config)
+
+    files = []
+    for i in range(2):
+        f = tmp_path / f"note{i}.md"
+        f.write_text(f"distinct body number {i}")
+        files.append(f)
+
+    results: dict[int, object] = {}
+
+    def run(i):
+        try:
+            results[i] = idx.index_file(files[i])
+        except Exception as exc:  # a raw shared conn would blow up here
+            results[i] = exc
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert results == {0: "indexed", 1: "indexed"}, results
+    assert probe.max_active == 1, (
+        f"index_file ran concurrently (peak={probe.max_active}); "
+        "shared DB/model access is not serialized")

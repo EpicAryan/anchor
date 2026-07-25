@@ -2,6 +2,10 @@
 name = "anchor"
 version = "0.1.0"
 description = "Local-first personal knowledge search (Phase 1: screenshot intelligence)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "EpicAryan" }]
 requires-python = ">=3.11"
 dependencies = [
     "watchdog>=4",
